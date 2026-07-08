@@ -12,6 +12,8 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build": "npm run build:main && vite build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "clean": "node scripts/clean-temp.mjs",
+    "clean:temp": "node scripts/clean-temp.mjs",
     "dist": "npm run build && electron-builder"
   },
   "dependencies": {
