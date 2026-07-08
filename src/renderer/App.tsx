@@ -308,7 +308,7 @@ function App() {
 
   const completedDownloads = downloads.filter((record) => record.state === "completed").length;
   const activeDownloads = downloads.filter((record) => record.state === "progressing").length;
-  const latestDownloads = downloads.slice(0, 9);
+  const latestDownloads = downloads;
   const uiScale = clampUiScale(settings.uiScale);
   const webviewZoom = Math.min(1, Math.max(0.78, uiScale * 0.85));
 
