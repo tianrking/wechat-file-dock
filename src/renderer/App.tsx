@@ -64,6 +64,7 @@ const previewDock: DockApi = {
     wechatPreloadUrl: "",
     appVersion: "preview"
   }),
+  startEngines: async () => true,
   createAccount: async (name: string) => ({ ...previewAccount, id: `preview-${Date.now()}`, name: name || "新微信" }),
   updateAccount: async (_accountId, patch) => [{ ...previewAccount, ...patch }],
   clearAccountSession: async () => true,
@@ -104,6 +105,7 @@ function App() {
   const [textDraft, setTextDraft] = useState("");
   const [events, setEvents] = useState<WebviewTelemetryPayload[]>([]);
   const [qrs, setQrs] = useState<QrMap>({});
+  const [bootError, setBootError] = useState("");
   const [textStatus, setTextStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
   const [textStatusMessage, setTextStatusMessage] = useState("");
   const [showSession, setShowSession] = useState(false);
@@ -116,14 +118,29 @@ function App() {
   }, [activeAccountId]);
 
   useEffect(() => {
-    void dock.bootstrap().then((payload) => {
-      setAccounts(payload.accounts);
-      setSettings(payload.settings);
-      setDownloads(payload.downloads);
-      setPreloadUrl(payload.wechatPreloadUrl);
-      setActiveAccountId(payload.accounts[0]?.id ?? "");
-      setStatuses(Object.fromEntries(payload.accounts.map((account) => [account.id, "unknown"])));
-    });
+    void dock
+      .bootstrap()
+      .then((payload) => {
+        setAccounts(payload.accounts);
+        setSettings(payload.settings);
+        setDownloads(payload.downloads);
+        setPreloadUrl(payload.wechatPreloadUrl);
+        setActiveAccountId(payload.accounts[0]?.id ?? "");
+        setStatuses(Object.fromEntries(payload.accounts.map((account) => [account.id, "unknown"])));
+        void dock.startEngines?.().catch((error) => {
+          setEvents((current) => [
+            {
+              accountId: payload.accounts[0]?.id ?? "",
+              kind: "scan-error",
+              message: `微信会话引擎启动失败：${error instanceof Error ? error.message : String(error)}`
+            },
+            ...current
+          ]);
+        });
+      })
+      .catch((error) => {
+        setBootError(error instanceof Error ? error.message : String(error));
+      });
 
     const offDownload = dock.onDownloadChanged(({ record }) => {
       setDownloads((current) => [record, ...current.filter((entry) => entry.id !== record.id)].slice(0, 120));
@@ -324,7 +341,7 @@ function App() {
   if (!settings) {
     return (
       <main className="loading-screen">
-        <span>正在启动文件舱</span>
+        <span>{bootError ? `启动失败：${bootError}` : "正在启动文件舱"}</span>
       </main>
     );
   }

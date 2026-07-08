@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AccountProfile,
@@ -15,7 +15,7 @@ type DockApi = Window["wechatDock"];
 type Unlisten = () => void;
 
 function isTauriRuntime(): boolean {
-  return Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+  return isTauri();
 }
 
 function createListener<T>(eventName: string, callback: (payload: T) => void): Unlisten {
@@ -36,6 +36,7 @@ export function createTauriDockApi(): DockApi | null {
 
   return {
     bootstrap: () => invoke<BootstrapPayload>("bootstrap"),
+    startEngines: () => invoke<boolean>("start_engines"),
     createAccount: (name: string) => invoke<AccountProfile>("create_account_command", { name }),
     updateAccount: (accountId: string, patch: Partial<Pick<AccountProfile, "name" | "enabled">>) =>
       invoke<AccountProfile[]>("update_account", { accountId, patch }),

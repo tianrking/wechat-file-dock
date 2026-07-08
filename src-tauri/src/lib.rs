@@ -264,9 +264,8 @@ fn open_with_system(target_path: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn bootstrap(app: tauri::AppHandle, store: State<AppStore>) -> Result<BootstrapPayload, String> {
+fn bootstrap(store: State<AppStore>) -> Result<BootstrapPayload, String> {
     let state = store.state.lock().map_err(|_| "State lock was poisoned".to_string())?.clone();
-    wechat_engine::ensure_all(&app, &state.accounts)?;
     Ok(BootstrapPayload {
         accounts: state.accounts,
         settings: state.settings,
@@ -274,6 +273,18 @@ fn bootstrap(app: tauri::AppHandle, store: State<AppStore>) -> Result<BootstrapP
         wechat_preload_url: String::new(),
         app_version: APP_VERSION.to_string(),
     })
+}
+
+#[tauri::command]
+fn start_engines(app: tauri::AppHandle, store: State<AppStore>) -> Result<bool, String> {
+    let accounts = store
+        .state
+        .lock()
+        .map_err(|_| "State lock was poisoned".to_string())?
+        .accounts
+        .clone();
+    wechat_engine::ensure_all(&app, &accounts)?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -446,6 +457,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             bootstrap,
+            start_engines,
             create_account_command,
             update_account,
             clear_account_session,
