@@ -10,7 +10,7 @@ fn engine_label(account_id: &str) -> String {
     format!("wechat-engine-{account_id}")
 }
 
-fn session_dir(account_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn session_dir(account_id: &str) -> Result<PathBuf, String> {
     let dir = project_dirs()?
         .data_local_dir()
         .join("sessions")
@@ -85,6 +85,22 @@ fn emit_engine_status(app: &tauri::AppHandle, account_id: &str, kind: &str, mess
     );
 }
 
+fn emit_session_preserved(app: &tauri::AppHandle, account: &AccountProfile, data_dir: &PathBuf) {
+    let _ = app.emit(
+        "webview-telemetry",
+        WebviewTelemetryPayload {
+            account_id: account.id.clone(),
+            kind: "session-preserved".to_string(),
+            message: Some("Per-account WebView session directory is active".to_string()),
+            details: Some(serde_json::json!({
+                "accountName": account.name,
+                "dataDirectory": data_dir,
+                "partition": account.partition
+            })),
+        },
+    );
+}
+
 pub(crate) fn ensure_account(app: &tauri::AppHandle, account: &AccountProfile) -> Result<(), String> {
     if !account.enabled {
         return Ok(());
@@ -102,12 +118,14 @@ pub(crate) fn ensure_account(app: &tauri::AppHandle, account: &AccountProfile) -
     let account_id = account.id.clone();
     let app_for_load = app.clone();
 
+    let data_dir = session_dir(&account.id)?;
+
     WebviewWindowBuilder::new(app, label, WebviewUrl::External(url))
         .title(format!("WeChat Engine - {}", account.name))
         .visible(false)
         .skip_taskbar(true)
         .inner_size(420.0, 560.0)
-        .data_directory(session_dir(&account.id)?)
+        .data_directory(data_dir.clone())
         .initialization_script(&init_script)
         .on_navigation(|target| {
             let target = target.as_str().to_ascii_lowercase();
@@ -124,6 +142,7 @@ pub(crate) fn ensure_account(app: &tauri::AppHandle, account: &AccountProfile) -
         .build()
         .map_err(|error| format!("Unable to start hidden WeChat engine: {error}"))?;
 
+    emit_session_preserved(app, account, &data_dir);
     Ok(())
 }
 
@@ -135,16 +154,22 @@ pub(crate) fn ensure_all(app: &tauri::AppHandle, accounts: &[AccountProfile]) ->
 }
 
 pub(crate) fn clear_account(app: &tauri::AppHandle, account_id: &str) -> Result<(), String> {
-    let label = engine_label(account_id);
-    if let Some(window) = app.get_webview_window(&label) {
-        let _ = window.clear_all_browsing_data();
-        let _ = window.close();
-    }
+    stop_account(app, account_id)?;
 
     let dir = session_dir(account_id)?;
     if dir.exists() {
         fs::remove_dir_all(&dir).map_err(|error| format!("Unable to remove session directory: {error}"))?;
     }
     fs::create_dir_all(&dir).map_err(|error| format!("Unable to recreate session directory: {error}"))?;
+    Ok(())
+}
+
+pub(crate) fn stop_account(app: &tauri::AppHandle, account_id: &str) -> Result<(), String> {
+    let label = engine_label(account_id);
+    if let Some(window) = app.get_webview_window(&label) {
+        window
+            .close()
+            .map_err(|error| format!("Unable to close hidden WeChat engine: {error}"))?;
+    }
     Ok(())
 }

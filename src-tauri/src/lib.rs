@@ -280,8 +280,13 @@ fn create_account_command(name: String, app: tauri::AppHandle, store: State<AppS
 }
 
 #[tauri::command]
-fn update_account(account_id: String, patch: AccountPatch, store: State<AppStore>) -> Result<Vec<AccountProfile>, String> {
-    with_state(&store, |state| {
+fn update_account(
+    account_id: String,
+    patch: AccountPatch,
+    app: tauri::AppHandle,
+    store: State<AppStore>,
+) -> Result<Vec<AccountProfile>, String> {
+    let accounts = with_state(&store, |state| {
         if let Some(account) = state.accounts.iter_mut().find(|entry| entry.id == account_id) {
             if let Some(name) = patch.name {
                 let trimmed = name.trim();
@@ -295,7 +300,17 @@ fn update_account(account_id: String, patch: AccountPatch, store: State<AppStore
             account.last_used_at = now_iso();
         }
         state.accounts.clone()
-    })
+    })?;
+
+    if let Some(account) = accounts.iter().find(|entry| entry.id == account_id) {
+        if account.enabled {
+            wechat_engine::ensure_account(&app, account)?;
+        } else {
+            wechat_engine::stop_account(&app, &account.id)?;
+        }
+    }
+
+    Ok(accounts)
 }
 
 #[tauri::command]
