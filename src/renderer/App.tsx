@@ -538,6 +538,7 @@ function App() {
   const latestDownloads = downloads.slice(0, 9);
   const uiScale = clampUiScale(settings.uiScale);
   const webviewZoom = Math.min(1, Math.max(0.78, uiScale * 0.85));
+  const qrOpen = sessionOpen && currentStatus !== "online";
 
   return (
     <main className="app-shell" style={{ "--ui-scale": uiScale } as React.CSSProperties}>
@@ -740,44 +741,27 @@ function App() {
                 <QrCode size={18} />
                 <h3>扫码</h3>
               </div>
-              <div className="upload-box">
-                {currentStatus === "online" ? <CheckCircle2 size={34} /> : <Smartphone size={34} />}
-                <strong>{currentStatus === "online" ? "已登录" : "微信扫一扫"}</strong>
-                <span>{currentStatus === "online" ? "会话已保留" : "手机确认即可"}</span>
-              </div>
-              <button className="solid-button full" onClick={() => setShowSession(true)}>
-                {currentStatus === "online" ? "查看" : "扫码"}
-              </button>
-            </div>
-          </section>
-
-          {sessionOpen && (
-          <section className="session-drawer is-open">
-            <div className="drawer-bar">
-              <div>
-                <strong>{currentStatus === "online" ? "已登录" : "微信扫一扫"}</strong>
-                <span>{currentStatus === "online" ? "可继续接收" : "手机确认即可"}</span>
-              </div>
-              <button className="soft-button" onClick={reloadActive}>
-                <RefreshCw size={15} />
-                刷新
-              </button>
-            </div>
-
-            <div className="qr-stage">
-              <div className="qr-card">
-                {activeQr ? (
-                  <img src={activeQr.src} alt="微信登录二维码" />
-                ) : (
-                  <div className="qr-placeholder">
-                    <Loader2 size={26} className="spin" />
-                    <span>正在获取二维码</span>
+              <div className={cx("upload-box", qrOpen && "has-qr")}>
+                {qrOpen && activeQr ? (
+                  <img className="inline-qr" src={activeQr.src} alt="微信登录二维码" />
+                ) : qrOpen ? (
+                  <div className="inline-qr qr-placeholder">
+                    <Loader2 size={24} className="spin" />
+                    <span>获取二维码</span>
                   </div>
+                ) : (
+                  <>
+                    {currentStatus === "online" ? <CheckCircle2 size={34} /> : <Smartphone size={34} />}
+                    <strong>{currentStatus === "online" ? "已登录" : "微信扫一扫"}</strong>
+                    <span>{currentStatus === "online" ? "会话已保留" : "手机确认即可"}</span>
+                  </>
                 )}
               </div>
+              <button className="solid-button full" onClick={qrOpen || currentStatus === "online" ? reloadActive : () => setShowSession(true)}>
+                {qrOpen || currentStatus === "online" ? "刷新" : "扫码"}
+              </button>
             </div>
           </section>
-          )}
 
           <section className="downloads-panel">
             <div className="panel-head spaced">
