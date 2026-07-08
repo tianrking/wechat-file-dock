@@ -1,6 +1,6 @@
 {
   "name": "wechat-file-dock",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A modern desktop dock for WeChat File Transfer Assistant with persistent sessions and automatic downloads.",
   "main": "dist-electron/main/main.js",
   "author": "tianrking",
