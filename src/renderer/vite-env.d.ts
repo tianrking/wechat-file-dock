@@ -26,6 +26,7 @@ type DockApi = {
 declare global {
   interface Window {
     wechatDock: DockApi;
+    __TAURI_INTERNALS__?: unknown;
   }
 
   namespace JSX {

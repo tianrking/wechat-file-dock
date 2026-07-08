@@ -20,6 +20,7 @@ import {
   statusMeta,
   type StatusMap
 } from "./dockUi";
+import { createTauriDockApi } from "./tauriDock";
 import "./styles.css";
 
 type WebviewMap = Record<string, WebviewTag | undefined>;
@@ -82,7 +83,9 @@ const previewDock: DockApi = {
   onWebviewTelemetry: () => () => undefined
 };
 
-const dock: DockApi = window.wechatDock ?? previewDock;
+const tauriDock = createTauriDockApi();
+const dock: DockApi = window.wechatDock ?? tauriDock ?? previewDock;
+const isTauriRuntime = Boolean(tauriDock);
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -368,23 +371,25 @@ function App() {
         onUpdateSettings={(patch) => void updateSettings(patch)}
       />
 
-      <div className="engine-pool" aria-hidden="true">
-        {accounts.map((account) => (
-          <AccountWebview
-            key={account.id}
-            account={account}
-            visible={false}
-            zoom={webviewZoom}
-            settings={settings}
-            preloadUrl={preloadUrl}
-            register={registerWebview}
-            onStatus={updateStatus}
-            onTelemetry={handleTelemetry}
-            onDownloadUrl={handleDownloadUrl}
-            onQr={handleQr}
-          />
-        ))}
-      </div>
+      {!isTauriRuntime && (
+        <div className="engine-pool" aria-hidden="true">
+          {accounts.map((account) => (
+            <AccountWebview
+              key={account.id}
+              account={account}
+              visible={false}
+              zoom={webviewZoom}
+              settings={settings}
+              preloadUrl={preloadUrl}
+              register={registerWebview}
+              onStatus={updateStatus}
+              onTelemetry={handleTelemetry}
+              onDownloadUrl={handleDownloadUrl}
+              onQr={handleQr}
+            />
+          ))}
+        </div>
+      )}
     </main>
   );
 }

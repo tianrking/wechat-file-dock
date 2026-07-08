@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "WeChat File Dock",
+  "version": "0.1.1",
+  "identifier": "dev.tianrking.wechat-file-dock",
+  "build": {
+    "beforeDevCommand": "npm run dev:web",
+    "beforeBuildCommand": "npm run build:web",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "WeChat File Dock",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 920,
+        "minHeight": 620,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "../build/icons/32x32.png",
+      "../build/icons/128x128.png",
+      "../build/icons/256x256.png",
+      "../build/icons/512x512.png",
+      "../build/icon.icns",
+      "../build/icon.ico"
+    ]
+  }
+}

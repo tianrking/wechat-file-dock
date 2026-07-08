@@ -8,8 +8,11 @@
   "private": true,
   "scripts": {
     "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"npm:dev:electron\"",
+    "dev:web": "vite --host 127.0.0.1 --port 5173",
     "dev:electron": "wait-on tcp:5173 && npm run build:main && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "dev:tauri": "tauri dev",
     "build:main": "tsc -p tsconfig.main.json",
+    "build:web": "vite build",
     "icons": "node scripts/generate-icons.mjs",
     "build": "npm run build:main && vite build",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
@@ -18,16 +21,18 @@
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win --publish never",
     "dist:mac": "npm run build && electron-builder --mac --publish never",
-    "dist:linux": "npm run build && electron-builder --linux --publish never"
+    "dist:linux": "npm run build && electron-builder --linux --publish never",
+    "build:tauri": "tauri build --no-bundle",
+    "dist:tauri": "tauri build"
   },
-  "dependencies": {},
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.2",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/http-cache-semantics": "^4.2.0",
     "@types/ms": "^2.1.0",
     "@types/node": "^24.10.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.2",
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^43.1.0",
@@ -71,5 +76,8 @@
         "AppImage"
       ]
     }
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
   }
 }
