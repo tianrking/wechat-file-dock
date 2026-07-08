@@ -37,6 +37,7 @@ export function createTauriDockApi(): DockApi | null {
   return {
     bootstrap: () => invoke<BootstrapPayload>("bootstrap"),
     startEngines: () => invoke<boolean>("start_engines"),
+    refreshAccountEngine: (accountId: string) => invoke<boolean>("refresh_account_engine", { accountId }),
     createAccount: (name: string) => invoke<AccountProfile>("create_account_command", { name }),
     updateAccount: (accountId: string, patch: Partial<Pick<AccountProfile, "name" | "enabled">>) =>
       invoke<AccountProfile[]>("update_account", { accountId, patch }),

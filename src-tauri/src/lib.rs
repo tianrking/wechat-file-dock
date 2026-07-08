@@ -288,6 +288,21 @@ fn start_engines(app: tauri::AppHandle, store: State<AppStore>) -> Result<bool, 
 }
 
 #[tauri::command]
+fn refresh_account_engine(account_id: String, app: tauri::AppHandle, store: State<AppStore>) -> Result<bool, String> {
+    let account = store
+        .state
+        .lock()
+        .map_err(|_| "State lock was poisoned".to_string())?
+        .accounts
+        .iter()
+        .find(|entry| entry.id == account_id)
+        .cloned()
+        .ok_or_else(|| "Account not found".to_string())?;
+    wechat_engine::refresh_account(&app, &account)?;
+    Ok(true)
+}
+
+#[tauri::command]
 fn create_account_command(name: String, app: tauri::AppHandle, store: State<AppStore>) -> Result<AccountProfile, String> {
     let account = with_state(&store, |state| {
         let account = create_account(name, state.accounts.len());
@@ -458,6 +473,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             bootstrap,
             start_engines,
+            refresh_account_engine,
             create_account_command,
             update_account,
             clear_account_session,

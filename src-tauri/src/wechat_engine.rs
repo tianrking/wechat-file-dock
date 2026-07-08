@@ -434,6 +434,8 @@ fn build_init_script(account_id: &str) -> Result<String, String> {
 
   let lastQrSrc = "";
   const absoluteSrc = (src) => {{
+    const match = String(src || "").match(/url\((['"]?)(.*?)\1\)/i);
+    if (match && match[2]) src = match[2];
     try {{
       return new URL(src, location.href).href;
     }} catch (_error) {{
@@ -443,12 +445,24 @@ fn build_init_script(account_id: &str) -> Result<String, String> {
   const captureQr = () => {{
     const image = Array.from(document.images || []).find((entry) => {{
       const text = `${{entry.src || ""}} ${{entry.alt || ""}} ${{entry.className || ""}} ${{entry.id || ""}}`;
-      return /qr|qrcode|login/i.test(text) || (entry.naturalWidth >= 120 && entry.naturalHeight >= 120);
+      return /qr|qrcode|login|uuid/i.test(text) || (entry.naturalWidth >= 80 && entry.naturalHeight >= 80);
     }});
     let src = image ? absoluteSrc(image.currentSrc || image.src) : "";
 
     if (!src) {{
-      const canvas = Array.from(document.querySelectorAll("canvas")).find((entry) => entry.width >= 120 && entry.height >= 120);
+      const backgroundNode = Array.from(document.querySelectorAll("*")).find((entry) => {{
+        const style = getComputedStyle(entry);
+        const bg = style.backgroundImage || "";
+        const rect = entry.getBoundingClientRect();
+        return /url\(/i.test(bg) && (/(qr|qrcode|login|uuid)/i.test(bg + " " + entry.className + " " + entry.id) || (rect.width >= 80 && rect.height >= 80));
+      }});
+      if (backgroundNode) {{
+        src = absoluteSrc(getComputedStyle(backgroundNode).backgroundImage);
+      }}
+    }}
+
+    if (!src) {{
+      const canvas = Array.from(document.querySelectorAll("canvas")).find((entry) => entry.width >= 80 && entry.height >= 80);
       if (canvas) {{
         try {{
           src = canvas.toDataURL("image/png");
@@ -665,6 +679,20 @@ pub(crate) fn stop_account(app: &tauri::AppHandle, account_id: &str) -> Result<(
             .map_err(|error| format!("Unable to close hidden WeChat engine: {error}"))?;
     }
     Ok(())
+}
+
+pub(crate) fn refresh_account(app: &tauri::AppHandle, account: &AccountProfile) -> Result<(), String> {
+    ensure_account(app, account)?;
+    let label = engine_label(&account.id);
+    let Some(window) = app.get_webview_window(&label) else {
+        return Err("Hidden WeChat engine is not running".to_string());
+    };
+    let url = WECHAT_FILE_HELPER_URL
+        .parse()
+        .map_err(|error| format!("Unable to parse WeChat URL: {error}"))?;
+    window
+        .navigate(url)
+        .map_err(|error| format!("Unable to refresh hidden WeChat engine: {error}"))
 }
 
 fn base_save_dir(settings: &AppSettings, account: &AccountProfile) -> PathBuf {

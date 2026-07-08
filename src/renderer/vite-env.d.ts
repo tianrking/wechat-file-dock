@@ -13,6 +13,7 @@ import type {
 type DockApi = {
   bootstrap: () => Promise<BootstrapPayload>;
   startEngines?: () => Promise<boolean>;
+  refreshAccountEngine?: (accountId: string) => Promise<boolean>;
   createAccount: (name: string) => Promise<AccountProfile>;
   updateAccount: (accountId: string, patch: Partial<Pick<AccountProfile, "name" | "enabled">>) => Promise<AccountProfile[]>;
   clearAccountSession: (accountId: string) => Promise<boolean>;

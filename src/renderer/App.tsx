@@ -65,6 +65,7 @@ const previewDock: DockApi = {
     appVersion: "preview"
   }),
   startEngines: async () => true,
+  refreshAccountEngine: async () => true,
   createAccount: async (name: string) => ({ ...previewAccount, id: `preview-${Date.now()}`, name: name || "新微信" }),
   updateAccount: async (_accountId, patch) => [{ ...previewAccount, ...patch }],
   clearAccountSession: async () => true,
@@ -246,6 +247,11 @@ function App() {
 
   const refreshActive = useCallback(() => {
     if (!activeAccount) {
+      return;
+    }
+
+    if (dock.refreshAccountEngine) {
+      void dock.refreshAccountEngine(activeAccount.id);
       return;
     }
 
