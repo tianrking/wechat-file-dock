@@ -1,0 +1,66 @@
+{
+  "name": "wechat-file-dock",
+  "version": "0.1.0",
+  "description": "A modern desktop dock for WeChat File Transfer Assistant with persistent sessions and automatic downloads.",
+  "main": "dist-electron/main/main.js",
+  "author": "tianrking",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173\" \"npm:dev:electron\"",
+    "dev:electron": "wait-on tcp:5173 && npm run build:main && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build": "npm run build:main && vite build",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.main.json --noEmit",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "electron": "^43.1.0",
+    "lucide-react": "^0.562.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/http-cache-semantics": "^4.2.0",
+    "@types/ms": "^2.1.0",
+    "@types/node": "^24.10.2",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron-builder": "^26.15.3",
+    "tinyglobby": "^0.2.17",
+    "typescript": "^5.9.3",
+    "vite": "^8.1.3",
+    "wait-on": "^9.0.3"
+  },
+  "build": {
+    "appId": "dev.wechat-file-dock.app",
+    "productName": "WeChat File Dock",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    }
+  }
+}
