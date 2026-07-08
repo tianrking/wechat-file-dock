@@ -6,6 +6,7 @@ import type {
   BootstrapPayload,
   DownloadUpdatePayload,
   WebviewDownloadPayload,
+  WebviewQrPayload,
   WebviewTelemetryPayload
 } from "../shared/types";
 
@@ -21,6 +22,7 @@ type DockApi = {
   sendTelemetry: (payload: WebviewTelemetryPayload) => void;
   onDownloadChanged: (callback: (payload: DownloadUpdatePayload) => void) => () => void;
   onWebviewTelemetry: (callback: (payload: WebviewTelemetryPayload) => void) => () => void;
+  onQrChanged: (callback: (payload: WebviewQrPayload) => void) => () => void;
 };
 
 declare global {

@@ -124,6 +124,14 @@ pub(crate) struct WebviewDownloadPayload {
     source_text: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WebviewQrPayload {
+    account_id: String,
+    src: String,
+    detected_at: String,
+}
+
 pub(crate) struct AppStore {
     state: Mutex<StoredState>,
     path: PathBuf,
@@ -404,8 +412,23 @@ fn send_telemetry(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Re
 }
 
 #[tauri::command]
-fn wechat_engine_event(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Result<(), String> {
-    app.emit("webview-telemetry", payload)
+fn wechat_engine_event(payload: serde_json::Value, app: tauri::AppHandle) -> Result<(), String> {
+    let kind = payload
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+
+    if kind == "qr" {
+        let qr: WebviewQrPayload =
+            serde_json::from_value(payload).map_err(|error| format!("Unable to parse QR event: {error}"))?;
+        app.emit("webview-qr", qr)
+            .map_err(|error| format!("Unable to emit QR event: {error}"))?;
+        return Ok(());
+    }
+
+    let telemetry: WebviewTelemetryPayload =
+        serde_json::from_value(payload).map_err(|error| format!("Unable to parse WeChat engine event: {error}"))?;
+    app.emit("webview-telemetry", telemetry)
         .map_err(|error| format!("Unable to emit WeChat engine event: {error}"))
 }
 

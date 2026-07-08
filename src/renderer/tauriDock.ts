@@ -6,6 +6,7 @@ import type {
   BootstrapPayload,
   DownloadUpdatePayload,
   WebviewDownloadPayload,
+  WebviewQrPayload,
   WebviewTelemetryPayload
 } from "../shared/types";
 
@@ -47,6 +48,7 @@ export function createTauriDockApi(): DockApi | null {
       void invoke("send_telemetry", { payload });
     },
     onDownloadChanged: (callback: (payload: DownloadUpdatePayload) => void) => createListener("downloads-changed", callback),
-    onWebviewTelemetry: (callback: (payload: WebviewTelemetryPayload) => void) => createListener("webview-telemetry", callback)
+    onWebviewTelemetry: (callback: (payload: WebviewTelemetryPayload) => void) => createListener("webview-telemetry", callback),
+    onQrChanged: (callback: (payload: WebviewQrPayload) => void) => createListener("webview-qr", callback)
   };
 }

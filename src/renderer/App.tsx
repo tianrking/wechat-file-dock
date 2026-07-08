@@ -80,7 +80,8 @@ const previewDock: DockApi = {
   downloadFromUrl: async () => true,
   sendTelemetry: () => undefined,
   onDownloadChanged: () => () => undefined,
-  onWebviewTelemetry: () => () => undefined
+  onWebviewTelemetry: () => () => undefined,
+  onQrChanged: () => () => undefined
 };
 
 const tauriDock = createTauriDockApi();
@@ -141,10 +142,17 @@ function App() {
         setTextStatusMessage(payload.message ?? "");
       }
     });
+    const offQr = dock.onQrChanged((payload) => {
+      setQrs((current) => ({
+        ...current,
+        [payload.accountId]: payload
+      }));
+    });
 
     return () => {
       offDownload();
       offTelemetry();
+      offQr();
     };
   }, []);
 

@@ -5,6 +5,7 @@ import type {
   BootstrapPayload,
   DownloadUpdatePayload,
   WebviewDownloadPayload,
+  WebviewQrPayload,
   WebviewTelemetryPayload
 } from "../shared/types";
 
@@ -28,7 +29,8 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, payload: WebviewTelemetryPayload) => callback(payload);
     ipcRenderer.on("webview:telemetry", listener);
     return () => ipcRenderer.removeListener("webview:telemetry", listener);
-  }
+  },
+  onQrChanged: (_callback: (payload: WebviewQrPayload) => void) => () => undefined
 };
 
 contextBridge.exposeInMainWorld("wechatDock", api);

@@ -28,21 +28,20 @@ fn build_init_script(account_id: &str) -> Result<String, String> {
   window.__WFD_TAURI_ENGINE__ = true;
 
   const ACCOUNT_ID = {account};
-  const send = (kind, message, details) => {{
+  const invokeCommand = (payload) => {{
     try {{
       const invoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke;
       if (typeof invoke === "function") {{
-        invoke("wechat_engine_event", {{
-          payload: {{
-            accountId: ACCOUNT_ID,
-            kind,
-            message,
-            details: details || null
-          }}
-        }}).catch(() => undefined);
+        invoke("wechat_engine_event", {{ payload }}).catch(() => undefined);
       }}
     }} catch (_error) {{}}
   }};
+  const send = (kind, message, details) => invokeCommand({{
+    accountId: ACCOUNT_ID,
+    kind,
+    message,
+    details: details || null
+  }});
 
   const classify = () => {{
     const href = String(location.href || "");
@@ -62,12 +61,55 @@ fn build_init_script(account_id: &str) -> Result<String, String> {
     }}
   }};
 
+  let lastQrSrc = "";
+  const absoluteSrc = (src) => {{
+    try {{
+      return new URL(src, location.href).href;
+    }} catch (_error) {{
+      return src || "";
+    }}
+  }};
+  const captureQr = () => {{
+    const image = Array.from(document.images || []).find((entry) => {{
+      const text = `${{entry.src || ""}} ${{entry.alt || ""}} ${{entry.className || ""}} ${{entry.id || ""}}`;
+      return /qr|qrcode|login/i.test(text) || (entry.naturalWidth >= 120 && entry.naturalHeight >= 120);
+    }});
+    let src = image ? absoluteSrc(image.currentSrc || image.src) : "";
+
+    if (!src) {{
+      const canvas = Array.from(document.querySelectorAll("canvas")).find((entry) => entry.width >= 120 && entry.height >= 120);
+      if (canvas) {{
+        try {{
+          src = canvas.toDataURL("image/png");
+        }} catch (_error) {{}}
+      }}
+    }}
+
+    if (src && src !== lastQrSrc) {{
+      lastQrSrc = src;
+      invokeCommand({{
+        accountId: ACCOUNT_ID,
+        kind: "qr",
+        src,
+        detectedAt: new Date().toISOString()
+      }});
+      send("login-required", "WeChat QR code is ready", {{ href: location.href }});
+    }}
+  }};
+
   window.addEventListener("DOMContentLoaded", () => {{
     send("loading", "Hidden WeChat session engine loaded", {{ href: location.href }});
     classify();
+    captureQr();
   }});
-  window.addEventListener("load", classify);
-  setInterval(classify, 1500);
+  window.addEventListener("load", () => {{
+    classify();
+    captureQr();
+  }});
+  setInterval(() => {{
+    classify();
+    captureQr();
+  }}, 1500);
 }})();
 "#
     ))
