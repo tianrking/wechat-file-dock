@@ -78,6 +78,7 @@ const previewDock: DockApi = {
   chooseDownloadDir: async () => previewSettings.downloadDir,
   openPath: async () => "",
   downloadFromUrl: async () => true,
+  sendText: async () => true,
   sendTelemetry: () => undefined,
   onDownloadChanged: () => () => undefined,
   onWebviewTelemetry: () => () => undefined,
@@ -250,6 +251,17 @@ function App() {
 
     setTextStatus("sending");
     setTextStatusMessage("正在发送到文件传输助手");
+
+    if (dock.sendText) {
+      void dock.sendText(activeAccount.id, textDraft).then((ok) => {
+        if (!ok) {
+          setTextStatus("failed");
+          setTextStatusMessage("发送失败：微信会话尚未准备好");
+        }
+      });
+      return;
+    }
+
     webviews.current[activeAccount.id]?.send("wfd:send-text", textDraft);
   }, [activeAccount, textDraft]);
 

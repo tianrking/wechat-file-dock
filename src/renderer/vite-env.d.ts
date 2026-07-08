@@ -19,6 +19,7 @@ type DockApi = {
   chooseDownloadDir: () => Promise<string | null>;
   openPath: (targetPath: string) => Promise<string>;
   downloadFromUrl: (payload: WebviewDownloadPayload) => Promise<boolean>;
+  sendText?: (accountId: string, text: string) => Promise<boolean>;
   sendTelemetry: (payload: WebviewTelemetryPayload) => void;
   onDownloadChanged: (callback: (payload: DownloadUpdatePayload) => void) => () => void;
   onWebviewTelemetry: (callback: (payload: WebviewTelemetryPayload) => void) => () => void;

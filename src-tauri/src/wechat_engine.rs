@@ -1,7 +1,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::mpsc,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use tauri::{webview::DownloadEvent, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -202,6 +204,215 @@ fn build_init_script(account_id: &str) -> Result<String, String> {
     message,
     details: details || null
   }});
+  const runtime = {{}};
+  const parseMaybeJson = (value) => {{
+    if (typeof value !== "string" || !value.trim()) return null;
+    try {{ return JSON.parse(value); }} catch (_error) {{ return null; }}
+  }};
+  const asRecord = (value) => value && typeof value === "object" ? value : null;
+  const randomDeviceId = () => `e${{Array.from({{ length: 15 }}, () => Math.floor(Math.random() * 10)).join("")}}`;
+  const getCookie = (name) => {{
+    const escaped = name.replace(/[.*+?^${{}}()|[\]\\]/g, "\\$&");
+    const match = document.cookie.match(new RegExp(`(?:^|; )${{escaped}}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : "";
+  }};
+  const mergeRuntimeFromPayload = (payload) => {{
+    const record = asRecord(payload);
+    if (!record) return;
+    const base = asRecord(record.BaseRequest);
+    if (base) {{
+      runtime.baseRequest = {{
+        Uin: String(base.Uin || ""),
+        Sid: String(base.Sid || ""),
+        Skey: String(base.Skey || ""),
+        DeviceID: String(base.DeviceID || randomDeviceId())
+      }};
+    }}
+    const msg = asRecord(record.Msg);
+    if (msg && msg.FromUserName) runtime.userName = String(msg.FromUserName);
+  }};
+  const mergeRuntimeFromResponse = (payload) => {{
+    const record = asRecord(payload);
+    if (!record) return;
+    const user = asRecord(record.User);
+    if (user && user.UserName) runtime.userName = String(user.UserName);
+    if (record.pass_ticket) runtime.passTicket = String(record.pass_ticket);
+  }};
+  const mergeRuntimeFromUrl = (rawUrl) => {{
+    try {{
+      const url = new URL(rawUrl, location.href);
+      const passTicket = url.searchParams.get("pass_ticket");
+      if (passTicket) runtime.passTicket = passTicket;
+      if (/webwxsendmsg/i.test(url.pathname)) runtime.sendEndpoint = url.href;
+    }} catch (_error) {{}}
+  }};
+  const bootstrapRuntime = () => {{
+    const wxuin = getCookie("wxuin");
+    const wxsid = getCookie("wxsid");
+    const skey = getCookie("skey") || "";
+    if (!runtime.baseRequest && wxuin && wxsid) {{
+      runtime.baseRequest = {{ Uin: wxuin, Sid: wxsid, Skey: skey, DeviceID: randomDeviceId() }};
+    }}
+    for (const storage of [localStorage, sessionStorage]) {{
+      for (let index = 0; index < storage.length; index += 1) {{
+        const key = storage.key(index);
+        if (!key) continue;
+        const parsed = parseMaybeJson(storage.getItem(key));
+        mergeRuntimeFromPayload(parsed);
+        mergeRuntimeFromResponse(parsed);
+      }}
+    }}
+  }};
+  const isLogoutUrl = (rawUrl) => {{
+    try {{
+      const url = new URL(rawUrl, location.href);
+      return /(^|\.)qq\.com$|(^|\.)wechat\.com$|(^|\.)weixin\.qq\.com$/.test(url.hostname) &&
+        (url.pathname.includes("webwxlogout") || url.pathname.includes("/logout"));
+    }} catch (_error) {{
+      return /webwxlogout/i.test(rawUrl);
+    }}
+  }};
+  const installNetworkCapture = () => {{
+    if (window.__WFD_NETWORK_CAPTURE__) return;
+    window.__WFD_NETWORK_CAPTURE__ = true;
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function patchedOpen(method, url, ...rest) {{
+      this.__wfdUrl = String(url);
+      mergeRuntimeFromUrl(this.__wfdUrl);
+      return originalOpen.apply(this, [method, url, ...rest]);
+    }};
+    XMLHttpRequest.prototype.send = function patchedSend(body) {{
+      const rawUrl = this.__wfdUrl || "";
+      mergeRuntimeFromPayload(parseMaybeJson(typeof body === "string" ? body : ""));
+      if (isLogoutUrl(rawUrl)) {{
+        send("session-preserved", "Blocked WeChat logout request", {{ url: rawUrl.slice(0, 180) }});
+        try {{ this.abort(); }} catch (_error) {{}}
+        return;
+      }}
+      this.addEventListener("loadend", () => {{
+        if (/webwxinit|webwxsendmsg|webwxsync/i.test(rawUrl)) {{
+          mergeRuntimeFromUrl(rawUrl);
+          mergeRuntimeFromResponse(parseMaybeJson(this.responseText));
+        }}
+      }});
+      return originalSend.call(this, body);
+    }};
+    if (window.fetch) {{
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input, init) => {{
+        const rawUrl = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+        mergeRuntimeFromUrl(rawUrl);
+        mergeRuntimeFromPayload(parseMaybeJson(typeof (init && init.body) === "string" ? init.body : ""));
+        if (isLogoutUrl(rawUrl)) {{
+          send("session-preserved", "Blocked WeChat logout fetch", {{ url: rawUrl.slice(0, 180) }});
+          return new Response(null, {{ status: 204, statusText: "Blocked by WeChat File Dock" }});
+        }}
+        const response = await originalFetch(input, init);
+        if (/webwxinit|webwxsendmsg|webwxsync/i.test(rawUrl)) {{
+          response.clone().text().then((text) => mergeRuntimeFromResponse(parseMaybeJson(text))).catch(() => undefined);
+        }}
+        return response;
+      }};
+    }}
+  }};
+  const normalizeTextContent = (text) => text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const makeClientMessageId = () => `${{Date.now()}}${{Math.floor(Math.random() * 10000).toString().padStart(4, "0")}}`;
+  const resolveSendEndpoint = () => {{
+    if (runtime.sendEndpoint) return runtime.sendEndpoint;
+    const url = new URL("/cgi-bin/mmwebwx-bin/webwxsendmsg", location.origin);
+    if (runtime.passTicket) url.searchParams.set("pass_ticket", runtime.passTicket);
+    return url.href;
+  }};
+  const visible = (element) => {{
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > 1 && rect.height > 1 && style.display !== "none" && style.visibility !== "hidden";
+  }};
+  const insertText = (target, text) => {{
+    target.focus();
+    const selection = getSelection();
+    if (target.isContentEditable && selection) {{
+      document.execCommand("insertText", false, text);
+    }} else if ("value" in target) {{
+      const start = target.selectionStart || target.value.length;
+      const end = target.selectionEnd || target.value.length;
+      target.value = `${{target.value.slice(0, start)}}${{text}}${{target.value.slice(end)}}`;
+      target.setSelectionRange(start + text.length, start + text.length);
+    }}
+    target.dispatchEvent(new InputEvent("input", {{ bubbles: true, inputType: "insertText", data: text }}));
+    target.dispatchEvent(new Event("change", {{ bubbles: true }}));
+  }};
+  const findComposer = () => Array.from(document.querySelectorAll("textarea, input[type='text'], [contenteditable='true'], [role='textbox']"))
+    .reverse()
+    .find((element) => visible(element) && !element.hasAttribute("disabled"));
+  const findSendButton = () => Array.from(document.querySelectorAll("button, [role='button'], a"))
+    .reverse()
+    .find((element) => visible(element) && /^(send|\u53d1\u9001)$/i.test((element.textContent || "").trim()) && !element.hasAttribute("disabled"));
+  const sendTextViaApi = async (text) => {{
+    bootstrapRuntime();
+    if (!runtime.baseRequest || !runtime.userName) return {{ ok: false, method: "api-not-ready" }};
+    const clientMsgId = makeClientMessageId();
+    const response = await fetch(resolveSendEndpoint(), {{
+      method: "POST",
+      credentials: "include",
+      headers: {{ "Content-Type": "application/json;charset=UTF-8" }},
+      body: JSON.stringify({{
+        BaseRequest: runtime.baseRequest,
+        Msg: {{
+          Type: 1,
+          Content: normalizeTextContent(text),
+          FromUserName: runtime.userName,
+          ToUserName: "filehelper",
+          LocalID: clientMsgId,
+          ClientMsgId: clientMsgId
+        }},
+        Scene: 0
+      }})
+    }});
+    const result = await response.json();
+    const ret = result && result.BaseResponse ? result.BaseResponse.Ret : undefined;
+    if (ret === 0) return {{ ok: true, method: "webwxsendmsg", clientMsgId }};
+    return {{ ok: false, method: "webwxsendmsg", message: result && result.BaseResponse ? result.BaseResponse.ErrMsg || String(ret) : "unknown" }};
+  }};
+  const sendTextViaDom = async (text) => {{
+    const composer = findComposer();
+    if (!composer) return {{ ok: false, method: "dom-not-ready" }};
+    insertText(composer, text);
+    const button = findSendButton();
+    if (button) {{
+      button.click();
+      return {{ ok: true, method: "dom-button" }};
+    }}
+    composer.dispatchEvent(new KeyboardEvent("keydown", {{ key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }}));
+    return {{ ok: true, method: "dom-enter" }};
+  }};
+  window.__WFD_SEND_TEXT__ = async (text) => {{
+    const content = String(text || "").trim();
+    if (!content) return {{ ok: false, method: "empty", message: "empty text" }};
+    send("text-send-result", "Sending text through hidden WeChat session", {{ method: "start" }});
+    try {{
+      const apiResult = await sendTextViaApi(content);
+      if (apiResult.ok) {{
+        send("text-send-result", "Text sent through hidden WeChat web session", apiResult);
+        return apiResult;
+      }}
+      const domResult = await sendTextViaDom(content);
+      if (domResult.ok) {{
+        send("text-send-result", "Text sent through hidden DOM fallback", domResult);
+        return domResult;
+      }}
+      const failed = {{ ok: false, method: "none", message: apiResult.message || domResult.message || "WeChat send channel was not ready" }};
+      send("text-send-result", `Text send failed: ${{failed.message}}`, failed);
+      return failed;
+    }} catch (error) {{
+      const failed = {{ ok: false, method: "error", message: error && error.message ? error.message : String(error) }};
+      send("text-send-result", `Text send failed: ${{failed.message}}`, failed);
+      return failed;
+    }}
+  }};
+  installNetworkCapture();
+  bootstrapRuntime();
 
   const classify = () => {{
     const href = String(location.href || "");
@@ -637,4 +848,70 @@ pub(crate) fn download_from_url(
     );
 
     Ok(true)
+}
+
+pub(crate) fn send_text(app: &tauri::AppHandle, account_id: &str, text: &str) -> Result<bool, String> {
+    let Some(window) = app.get_webview_window(&engine_label(account_id)) else {
+        emit_telemetry(
+            app,
+            WebviewTelemetryPayload {
+                account_id: account_id.to_string(),
+                kind: "text-send-result".to_string(),
+                message: Some("Text send failed: hidden WeChat engine is not running".to_string()),
+                details: Some(serde_json::json!({ "method": "missing-engine" })),
+            },
+        );
+        return Ok(false);
+    };
+
+    let content = text.trim();
+    if content.is_empty() {
+        return Ok(false);
+    }
+
+    let text_json = serde_json::to_string(content).map_err(|error| format!("Unable to encode text: {error}"))?;
+    let script = format!(
+        r#"
+(async () => {{
+  if (typeof window.__WFD_SEND_TEXT__ !== "function") {{
+    return {{ ok: false, method: "not-ready", message: "WeChat send bridge is not ready" }};
+  }}
+  return await window.__WFD_SEND_TEXT__({text_json});
+}})();
+"#
+    );
+
+    let (tx, rx) = mpsc::channel();
+    window
+        .eval_with_callback(script, move |result| {
+            let _ = tx.send(result);
+        })
+        .map_err(|error| format!("Unable to evaluate send script: {error}"))?;
+
+    let result = rx
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Timed out waiting for WeChat send result".to_string())?;
+    let value: serde_json::Value =
+        serde_json::from_str(&result).map_err(|error| format!("Unable to parse send result: {error}; raw={result}"))?;
+    let ok = value.get("ok").and_then(serde_json::Value::as_bool).unwrap_or(false);
+
+    if !ok {
+        emit_telemetry(
+            app,
+            WebviewTelemetryPayload {
+                account_id: account_id.to_string(),
+                kind: "text-send-result".to_string(),
+                message: Some(format!(
+                    "Text send failed: {}",
+                    value
+                        .get("message")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("WeChat send channel was not ready")
+                )),
+                details: Some(value),
+            },
+        );
+    }
+
+    Ok(ok)
 }

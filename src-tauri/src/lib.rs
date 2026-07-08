@@ -397,6 +397,11 @@ fn send_telemetry(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Re
 }
 
 #[tauri::command]
+fn send_text(account_id: String, text: String, app: tauri::AppHandle) -> Result<bool, String> {
+    wechat_engine::send_text(&app, &account_id, &text)
+}
+
+#[tauri::command]
 fn wechat_engine_event(payload: serde_json::Value, app: tauri::AppHandle, store: State<AppStore>) -> Result<(), String> {
     let kind = payload
         .get("kind")
@@ -449,6 +454,7 @@ pub fn run() {
             open_path,
             download_from_url,
             send_telemetry,
+            send_text,
             wechat_engine_event
         ])
         .run(tauri::generate_context!())

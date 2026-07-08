@@ -44,6 +44,7 @@ export function createTauriDockApi(): DockApi | null {
     chooseDownloadDir: () => invoke<string | null>("choose_download_dir"),
     openPath: (targetPath: string) => invoke<string>("open_path", { targetPath }),
     downloadFromUrl: (payload: WebviewDownloadPayload) => invoke<boolean>("download_from_url", { payload }),
+    sendText: (accountId: string, text: string) => invoke<boolean>("send_text", { accountId, text }),
     sendTelemetry: (payload: WebviewTelemetryPayload) => {
       void invoke("send_telemetry", { payload });
     },
