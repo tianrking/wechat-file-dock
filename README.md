@@ -28,6 +28,26 @@ npm run build
 npm run dist
 ```
 
+平台打包脚本：
+
+```powershell
+npm run dist:win
+npm run dist:mac
+npm run dist:linux
+```
+
+## CI 与发布
+
+- `CI`：push、pull request、手动触发时在 Windows、macOS、Linux 上运行 `npm ci`、`npm run typecheck`、`npm run build`。
+- `Release`：推送 `v*` tag 时自动打包并发布 GitHub Release。
+- 手动发布：在 GitHub Actions 里运行 `Release` workflow，并填写已有 tag，例如 `v0.1.0`。
+
+Release 产物：
+
+- Windows: NSIS 安装包和 portable `.exe`
+- macOS: `.dmg`
+- Linux: `.AppImage`
+
 ## 清理
 
 ```powershell
