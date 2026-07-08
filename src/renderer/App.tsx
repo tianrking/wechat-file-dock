@@ -622,7 +622,7 @@ function App() {
                   {status.label}
                 </span>
               </div>
-              <p>后台保持登录，前台只做文件、文本和接收管理。</p>
+              <p>文件与文本传输</p>
             </div>
           </div>
 
@@ -667,9 +667,9 @@ function App() {
         <div className="dashboard">
           <section className="hero-panel">
             <div>
-              <span className="eyebrow">自动接收</span>
-              <h3>{settings.autoDownload ? "正在监听微信文件" : "接收已暂停"}</h3>
-              <p>手机发来的文件会自动保存到本机，可按文档、图片、视频等类型过滤。</p>
+              <span className="eyebrow">接收</span>
+              <h3>{settings.autoDownload ? "自动保存已开启" : "自动保存已暂停"}</h3>
+              <p>{settings.downloadDir}</p>
             </div>
             <button
               className={cx("power-toggle", settings.autoDownload && "is-on")}
@@ -738,15 +738,15 @@ function App() {
             <div className="tool-panel upload-tool">
               <div className="panel-head">
                 <QrCode size={18} />
-                <h3>微信扫码</h3>
+                <h3>扫码</h3>
               </div>
               <div className="upload-box">
                 {currentStatus === "online" ? <CheckCircle2 size={34} /> : <Smartphone size={34} />}
-                <strong>{currentStatus === "online" ? "已登录" : "用微信扫一扫"}</strong>
-                <span>{currentStatus === "online" ? "会话已保留在本机" : "手机确认后自动进入接收状态"}</span>
+                <strong>{currentStatus === "online" ? "已登录" : "微信扫一扫"}</strong>
+                <span>{currentStatus === "online" ? "会话已保留" : "手机确认即可"}</span>
               </div>
               <button className="solid-button full" onClick={() => setShowSession(true)}>
-                {currentStatus === "online" ? "查看二维码" : "开始扫码"}
+                {currentStatus === "online" ? "查看" : "扫码"}
               </button>
             </div>
           </section>
@@ -755,8 +755,8 @@ function App() {
           <section className="session-drawer is-open">
             <div className="drawer-bar">
               <div>
-                <strong>{currentStatus === "online" ? "微信已登录" : "微信扫码"}</strong>
-                <span>{currentStatus === "online" ? "关闭窗口后仍会尽量保留会话" : "打开手机微信，对准二维码"}</span>
+                <strong>{currentStatus === "online" ? "已登录" : "微信扫一扫"}</strong>
+                <span>{currentStatus === "online" ? "可继续接收" : "手机确认即可"}</span>
               </div>
               <button className="soft-button" onClick={reloadActive}>
                 <RefreshCw size={15} />
@@ -774,11 +774,6 @@ function App() {
                     <span>正在获取二维码</span>
                   </div>
                 )}
-              </div>
-              <div className="qr-copy">
-                <Smartphone size={28} />
-                <h3>{currentStatus === "online" ? "可以开始传文件了" : "扫一扫登录"}</h3>
-                <p>{currentStatus === "online" ? "新文件会进入自动接收流程，文本也会直接发送到文件传输助手。" : "扫码完成后，会进入后台接收状态。"}</p>
               </div>
             </div>
           </section>
