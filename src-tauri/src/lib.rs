@@ -29,7 +29,7 @@ pub(crate) struct AccountProfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DownloadRules {
+pub(crate) struct DownloadRules {
     document: bool,
     image: bool,
     video: bool,
@@ -42,7 +42,7 @@ struct DownloadRules {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AppSettings {
+pub(crate) struct AppSettings {
     download_dir: String,
     auto_download: bool,
     download_rules: DownloadRules,
@@ -54,7 +54,7 @@ struct AppSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DownloadRecord {
+pub(crate) struct DownloadRecord {
     id: String,
     account_id: String,
     account_name: String,
@@ -70,7 +70,7 @@ struct DownloadRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct StoredState {
+pub(crate) struct StoredState {
     accounts: Vec<AccountProfile>,
     settings: AppSettings,
     downloads: Vec<DownloadRecord>,
@@ -220,14 +220,14 @@ fn store_path() -> Result<PathBuf, String> {
     Ok(dir.join(STORE_FILENAME))
 }
 
-fn load_state(path: &Path) -> StoredState {
+pub(crate) fn load_state(path: &Path) -> StoredState {
     fs::read_to_string(path)
         .ok()
         .and_then(|text| serde_json::from_str::<StoredState>(&text).ok())
         .unwrap_or_else(default_state)
 }
 
-fn save_state(path: &Path, state: &StoredState) -> Result<(), String> {
+pub(crate) fn save_state(path: &Path, state: &StoredState) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| format!("Unable to create state directory: {error}"))?;
     }
@@ -386,23 +386,8 @@ fn open_path(target_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn download_from_url(payload: WebviewDownloadPayload, app: tauri::AppHandle) -> Result<bool, String> {
-    app.emit(
-        "webview-telemetry",
-        WebviewTelemetryPayload {
-            account_id: payload.account_id,
-            kind: "download-error".to_string(),
-            message: Some("Tauri WeChat session engine is not migrated yet".to_string()),
-            details: Some(serde_json::json!({
-                "url": payload.url,
-                "kind": payload.kind,
-                "filename": payload.filename,
-                "sourceText": payload.source_text
-            })),
-        },
-    )
-    .map_err(|error| format!("Unable to emit telemetry: {error}"))?;
-    Ok(false)
+fn download_from_url(payload: WebviewDownloadPayload, app: tauri::AppHandle, store: State<AppStore>) -> Result<bool, String> {
+    wechat_engine::download_from_url(&app, &store, payload)
 }
 
 #[tauri::command]
@@ -412,7 +397,7 @@ fn send_telemetry(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Re
 }
 
 #[tauri::command]
-fn wechat_engine_event(payload: serde_json::Value, app: tauri::AppHandle) -> Result<(), String> {
+fn wechat_engine_event(payload: serde_json::Value, app: tauri::AppHandle, store: State<AppStore>) -> Result<(), String> {
     let kind = payload
         .get("kind")
         .and_then(serde_json::Value::as_str)
@@ -423,6 +408,13 @@ fn wechat_engine_event(payload: serde_json::Value, app: tauri::AppHandle) -> Res
             serde_json::from_value(payload).map_err(|error| format!("Unable to parse QR event: {error}"))?;
         app.emit("webview-qr", qr)
             .map_err(|error| format!("Unable to emit QR event: {error}"))?;
+        return Ok(());
+    }
+
+    if kind == "download-url" {
+        let download: WebviewDownloadPayload =
+            serde_json::from_value(payload).map_err(|error| format!("Unable to parse download event: {error}"))?;
+        wechat_engine::download_from_url(&app, &store, download)?;
         return Ok(());
     }
 
