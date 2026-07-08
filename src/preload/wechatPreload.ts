@@ -50,7 +50,9 @@ const archiveExtensionPattern = /\.(7z|bz2|gz|iso|rar|tar|tgz|xz|zip)(?:$|[?#&])
 const codeExtensionPattern = /\.(c|cc|cpp|cs|css|go|h|hpp|html?|java|js|json|jsx|kt|log|lua|md|php|py|rs|sh|sql|swift|toml|ts|tsx|xml|yaml|yml)(?:$|[?#&])/i;
 const appExtensionPattern = /\.(apk|appx|bin|deb|dmg|exe|ipa|msi|pkg|rpm|ufw)(?:$|[?#&])/i;
 const anyKnownExtensionPattern = /\.(7z|aac|apk|appx|avi|bin|bmp|bz2|c|cc|cpp|cs|csv|css|deb|dmg|docx?|exe|flac|gif|go|gz|heic|html?|ipa|iso|java|jpe?g|js|json|jsx|key|kt|log|m4a|m4v|md|mkv|mov|mp3|mp4|msi|ogg|opus|pages|pdf|php|pkg|png|pptx?|py|rar|rpm|rs|rtf|sh|sql|svg|swift|tar|tgz|tiff?|toml|ts|tsx|txt|ufw|wav|webm|webp|wma|xlsx?|xml|xz|yaml|yml|zip)(?:$|[?#&])/i;
-const mediaEndpointPattern = /webwxgetmsgimg|webwxgetvideo|webwxgetmedia|getmsgimg|getvideo|getmedia|download|attachment|file/i;
+const mediaEndpointPattern = /webwxgetmsgimg|webwxgetvideo|webwxgetmedia|getmsgimg|getvideo|getmedia|download|attachment/i;
+const fileHelperMediaPathPattern = /\/cgi-bin\/mmwebwx-bin\/webwxget(?:msgimg|video|media)/i;
+const internalWeChatShellPathPattern = /\/(?:feedback(?:\.html?)?|filehelper(?:\.weixin)?|szfilehelper(?:\.weixin)?)?$/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
@@ -282,6 +284,40 @@ function absoluteUrl(raw: string): string | null {
   }
 }
 
+function redactUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl, window.location.href);
+    for (const key of Array.from(url.searchParams.keys())) {
+      if (/skey|sid|uin|ticket|token|pass/i.test(key)) {
+        url.searchParams.set(key, "[redacted]");
+      }
+    }
+    return url.toString();
+  } catch {
+    return rawUrl.replace(/([?&](?:skey|sid|uin|ticket|token|pass_ticket)=)[^&\s]+/gi, "$1[redacted]");
+  }
+}
+
+function isInternalWeChatShellUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl, window.location.href);
+    const hostname = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
+
+    if (pathname.endsWith(".weixin")) {
+      return true;
+    }
+
+    if (hostname === "filehelper.weixin.qq.com" && !fileHelperMediaPathPattern.test(pathname)) {
+      return true;
+    }
+
+    return internalWeChatShellPathPattern.test(pathname) && /filehelper|feedback/i.test(pathname);
+  } catch {
+    return /\.weixin(?:$|[?#])|feedback\.html?/i.test(rawUrl);
+  }
+}
+
 function visible(element: Element): boolean {
   const rect = element.getBoundingClientRect();
   const style = window.getComputedStyle(element);
@@ -398,8 +434,20 @@ function sendDownload(payload: Omit<WebviewDownloadPayload, "accountId">): void 
   sendTelemetry({
     kind: "download-url",
     message: `queued ${payload.kind}`,
-    details: { filename: payload.filename, url: payload.url.slice(0, 160) }
+    details: { filename: payload.filename, url: redactUrl(payload.url).slice(0, 160) }
   });
+}
+
+function isDownloadableCandidate(url: string, text: string, node: Element): boolean {
+  if (isInternalWeChatShellUrl(url)) {
+    return false;
+  }
+
+  if (node instanceof HTMLAnchorElement && node.hasAttribute("download")) {
+    return true;
+  }
+
+  return mediaEndpointPattern.test(url) || anyKnownExtensionPattern.test(text);
 }
 
 function collectUrlsFromContext(element: Element): Array<{ url: string; kind: TransferKind; filename?: string }> {
@@ -421,7 +469,7 @@ function collectUrlsFromContext(element: Element): Array<{ url: string; kind: Tr
       continue;
     }
 
-    if (!mediaEndpointPattern.test(url) && !anyKnownExtensionPattern.test(url)) {
+    if (!isDownloadableCandidate(url, text, node)) {
       continue;
     }
 
@@ -445,7 +493,7 @@ function looksLikeDownloadControl(element: Element): boolean {
     return true;
   }
 
-  return /download|down|save|下载|保存|icon_down|file/i.test(`${value} ${element.getAttribute("class") ?? ""}`);
+  return /download|down|save|\u4e0b\u8f7d|\u4fdd\u5b58|icon_down/i.test(`${value} ${element.getAttribute("class") ?? ""}`);
 }
 
 function scanDownloadControls(): void {
@@ -469,16 +517,20 @@ function scanDownloadControls(): void {
       continue;
     }
 
-    for (const entry of collectUrlsFromContext(control)) {
+    const entries = collectUrlsFromContext(control);
+    if (entries.length === 0) {
+      continue;
+    }
+
+    for (const entry of entries) {
       sendDownload({ ...entry, sourceText: contextText(control).slice(0, 240) });
     }
 
     clickedNodes.add(control);
-    (control as HTMLElement).click();
     sendTelemetry({
-      kind: "auto-click",
-      message: "clicked page download control",
-      details: { text: textOf(control).slice(0, 160) }
+      kind: "download-url",
+      message: "detected page download control",
+      details: { text: textOf(control).slice(0, 160), count: entries.length }
     });
   }
 }
@@ -503,7 +555,7 @@ function scanInlineMedia(): void {
       continue;
     }
 
-    if (!mediaEndpointPattern.test(url) && !anyKnownExtensionPattern.test(url)) {
+    if (!isDownloadableCandidate(url, text, node)) {
       continue;
     }
 

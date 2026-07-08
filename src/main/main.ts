@@ -18,6 +18,7 @@ import type {
   AppSettings,
   BootstrapPayload,
   DownloadRecord,
+  TransferKind,
   WebviewDownloadPayload,
   WebviewTelemetryPayload
 } from "../shared/types";
@@ -37,7 +38,7 @@ let settings: AppSettings;
 let downloads: DownloadRecord[] = [];
 const wiredPartitions = new Set<string>();
 const activeDownloads = new Map<string, DownloadRecord>();
-const pendingDownloads = new Map<string, { filename?: string; accountId: string }>();
+const pendingDownloads = new Map<string, { filename?: string; accountId: string; kind: TransferKind }>();
 const recentUrlRequests = new Map<string, number>();
 const downloaderWindows = new Map<string, BrowserWindow>();
 
@@ -50,7 +51,30 @@ function getWechatPreloadPath(): string {
 }
 
 function sanitizeFilename(filename: string): string {
-  return filename.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim() || `download-${Date.now()}`;
+  return filename
+    .replace(/[?#].*$/, "")
+    .replace(/(skey|sid|uin|ticket|token|pass_ticket)=[^&\s]+/gi, "$1=[redacted]")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .trim() || `download-${Date.now()}`;
+}
+
+function fallbackFilename(kind: TransferKind, timestamp = Date.now()): string {
+  const extension: Record<TransferKind, string> = {
+    document: "bin",
+    image: "jpg",
+    video: "mp4",
+    audio: "mp3",
+    archive: "zip",
+    code: "txt",
+    app: "bin",
+    other: "bin"
+  };
+  return `wechat-${kind}-${timestamp}.${extension[kind]}`;
+}
+
+function hasUsefulExtension(filename: string): boolean {
+  const extension = path.extname(filename).toLowerCase();
+  return Boolean(extension) && extension !== ".weixin" && extension !== ".html" && extension !== ".htm";
 }
 
 function filenameFromUrl(rawUrl: string, fallback: string): string {
@@ -63,10 +87,36 @@ function filenameFromUrl(rawUrl: string, fallback: string): string {
       path.basename(decodeURIComponent(url.pathname))
     ].filter(Boolean) as string[];
 
-    return sanitizeFilename(candidates.find((candidate) => candidate.includes(".")) ?? candidates[0] ?? fallback);
+    const candidate = candidates.map(sanitizeFilename).find(hasUsefulExtension);
+    return candidate ?? sanitizeFilename(fallback);
   } catch {
     return sanitizeFilename(fallback);
   }
+}
+
+function isAllowedDownloadUrl(rawUrl: string): boolean {
+  if (!/^https?:\/\//i.test(rawUrl)) {
+    return false;
+  }
+
+  try {
+    const url = new URL(rawUrl);
+    const hostname = url.hostname.toLowerCase();
+    const pathname = url.pathname.toLowerCase();
+    const isFileHelperShell = hostname === "filehelper.weixin.qq.com" && !/\/cgi-bin\/mmwebwx-bin\/webwxget(?:msgimg|video|media)/i.test(pathname);
+    return !isFileHelperShell && !pathname.endsWith(".weixin");
+  } catch {
+    return false;
+  }
+}
+
+function resolveDownloadFilename(rawUrl: string, kind: TransferKind, suggested?: string): string {
+  const fallback = fallbackFilename(kind);
+  const cleanSuggested = suggested ? sanitizeFilename(suggested) : "";
+  if (cleanSuggested && hasUsefulExtension(cleanSuggested)) {
+    return cleanSuggested;
+  }
+  return filenameFromUrl(rawUrl, fallback);
 }
 
 function todayFolder(): string {
@@ -197,8 +247,22 @@ function ensureSessionForAccount(account: AccountProfile): void {
     const accountForDownload = findAccountByPartition(account.partition) ?? account;
     const pendingKey = pendingDownloadKey(accountForDownload.id, item.getURL());
     const pending = pendingDownloads.get(pendingKey);
-    const filename = sanitizeFilename(pending?.filename ?? item.getFilename());
     pendingDownloads.delete(pendingKey);
+
+    if (!pending || !isAllowedDownloadUrl(item.getURL())) {
+      item.cancel();
+      broadcast("webview:telemetry", {
+        accountId: accountForDownload.id,
+        kind: "download-url",
+        message: "Ignored non-file WeChat page download",
+        details: {
+          filename: item.getFilename()
+        }
+      } satisfies WebviewTelemetryPayload);
+      return;
+    }
+
+    const filename = resolveDownloadFilename(item.getURL(), pending.kind, pending.filename ?? item.getFilename());
     const baseDir = settings.organizeByDate
       ? path.join(settings.downloadDir, todayFolder(), accountForDownload.name)
       : path.join(settings.downloadDir, accountForDownload.name);
@@ -255,7 +319,7 @@ function ensureSessionForAccount(account: AccountProfile): void {
 
 function requestDownloadFromUrl(payload: WebviewDownloadPayload): boolean {
   const account = findAccountById(payload.accountId);
-  if (!account || !/^https?:\/\//i.test(payload.url)) {
+  if (!account || !isAllowedDownloadUrl(payload.url)) {
     return false;
   }
 
@@ -273,12 +337,11 @@ function requestDownloadFromUrl(payload: WebviewDownloadPayload): boolean {
     }
   }
 
-  const filename = payload.filename
-    ? sanitizeFilename(payload.filename)
-    : filenameFromUrl(payload.url, `${payload.kind}-${now}`);
+  const filename = resolveDownloadFilename(payload.url, payload.kind, payload.filename);
   pendingDownloads.set(pendingDownloadKey(account.id, payload.url), {
     accountId: account.id,
-    filename
+    filename,
+    kind: payload.kind
   });
 
   getDownloaderWindow(account).webContents.downloadURL(payload.url);
