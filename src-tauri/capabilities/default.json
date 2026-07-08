@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for the main WeChat File Dock window.",
-  "windows": ["main"],
+  "description": "Default permissions for WeChat File Dock windows.",
+  "windows": ["main", "wechat-engine-*", "wechat-download-*"],
   "permissions": ["core:default"]
 }

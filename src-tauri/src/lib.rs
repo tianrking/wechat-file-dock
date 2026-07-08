@@ -10,12 +10,14 @@ use std::{
 use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
+mod wechat_engine;
+
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const STORE_FILENAME: &str = "state.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AccountProfile {
+pub(crate) struct AccountProfile {
     id: String,
     name: String,
     partition: String,
@@ -105,7 +107,7 @@ struct SettingsPatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WebviewTelemetryPayload {
+pub(crate) struct WebviewTelemetryPayload {
     account_id: String,
     kind: String,
     message: Option<String>,
@@ -114,7 +116,7 @@ struct WebviewTelemetryPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct WebviewDownloadPayload {
+pub(crate) struct WebviewDownloadPayload {
     account_id: String,
     url: String,
     kind: String,
@@ -122,16 +124,16 @@ struct WebviewDownloadPayload {
     source_text: Option<String>,
 }
 
-struct AppStore {
+pub(crate) struct AppStore {
     state: Mutex<StoredState>,
     path: PathBuf,
 }
 
-fn now_iso() -> String {
+pub(crate) fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
-fn project_dirs() -> Result<ProjectDirs, String> {
+pub(crate) fn project_dirs() -> Result<ProjectDirs, String> {
     ProjectDirs::from("dev", "wechat-file-dock", "WeChatFileDock")
         .ok_or_else(|| "Unable to resolve app data directory".to_string())
 }
@@ -254,8 +256,9 @@ fn open_with_system(target_path: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn bootstrap(store: State<AppStore>) -> Result<BootstrapPayload, String> {
+fn bootstrap(app: tauri::AppHandle, store: State<AppStore>) -> Result<BootstrapPayload, String> {
     let state = store.state.lock().map_err(|_| "State lock was poisoned".to_string())?.clone();
+    wechat_engine::ensure_all(&app, &state.accounts)?;
     Ok(BootstrapPayload {
         accounts: state.accounts,
         settings: state.settings,
@@ -266,12 +269,14 @@ fn bootstrap(store: State<AppStore>) -> Result<BootstrapPayload, String> {
 }
 
 #[tauri::command]
-fn create_account_command(name: String, store: State<AppStore>) -> Result<AccountProfile, String> {
-    with_state(&store, |state| {
+fn create_account_command(name: String, app: tauri::AppHandle, store: State<AppStore>) -> Result<AccountProfile, String> {
+    let account = with_state(&store, |state| {
         let account = create_account(name, state.accounts.len());
         state.accounts.push(account.clone());
         account
-    })
+    })?;
+    wechat_engine::ensure_account(&app, &account)?;
+    Ok(account)
 }
 
 #[tauri::command]
@@ -294,7 +299,7 @@ fn update_account(account_id: String, patch: AccountPatch, store: State<AppStore
 }
 
 #[tauri::command]
-fn clear_account_session(account_id: String, store: State<AppStore>) -> Result<bool, String> {
+fn clear_account_session(account_id: String, app: tauri::AppHandle, store: State<AppStore>) -> Result<bool, String> {
     let exists = store
         .state
         .lock()
@@ -302,6 +307,9 @@ fn clear_account_session(account_id: String, store: State<AppStore>) -> Result<b
         .accounts
         .iter()
         .any(|account| account.id == account_id);
+    if exists {
+        wechat_engine::clear_account(&app, &account_id)?;
+    }
     Ok(exists)
 }
 
@@ -380,6 +388,12 @@ fn send_telemetry(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Re
         .map_err(|error| format!("Unable to emit telemetry: {error}"))
 }
 
+#[tauri::command]
+fn wechat_engine_event(payload: WebviewTelemetryPayload, app: tauri::AppHandle) -> Result<(), String> {
+    app.emit("webview-telemetry", payload)
+        .map_err(|error| format!("Unable to emit WeChat engine event: {error}"))
+}
+
 pub fn run() {
     let path = store_path().expect("failed to resolve app state path");
     let state = load_state(&path);
@@ -404,7 +418,8 @@ pub fn run() {
             choose_download_dir,
             open_path,
             download_from_url,
-            send_telemetry
+            send_telemetry,
+            wechat_engine_event
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
