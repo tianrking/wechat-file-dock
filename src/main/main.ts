@@ -111,6 +111,10 @@ function findAccountById(accountId: string): AccountProfile | undefined {
   return accounts.find((account) => account.id === accountId);
 }
 
+function pendingDownloadKey(accountId: string, url: string): string {
+  return `${accountId}:${url}`;
+}
+
 function clampUiScale(value: unknown, fallback: number): number {
   const next = typeof value === "number" && Number.isFinite(value) ? value : fallback;
   return Math.min(1.2, Math.max(0.86, Number(next.toFixed(2))));
@@ -191,9 +195,10 @@ function ensureSessionForAccount(account: AccountProfile): void {
 
   ses.on("will-download", (_event, item) => {
     const accountForDownload = findAccountByPartition(account.partition) ?? account;
-    const pending = pendingDownloads.get(item.getURL());
+    const pendingKey = pendingDownloadKey(accountForDownload.id, item.getURL());
+    const pending = pendingDownloads.get(pendingKey);
     const filename = sanitizeFilename(pending?.filename ?? item.getFilename());
-    pendingDownloads.delete(item.getURL());
+    pendingDownloads.delete(pendingKey);
     const baseDir = settings.organizeByDate
       ? path.join(settings.downloadDir, todayFolder(), accountForDownload.name)
       : path.join(settings.downloadDir, accountForDownload.name);
@@ -271,7 +276,7 @@ function requestDownloadFromUrl(payload: WebviewDownloadPayload): boolean {
   const filename = payload.filename
     ? sanitizeFilename(payload.filename)
     : filenameFromUrl(payload.url, `${payload.kind}-${now}`);
-  pendingDownloads.set(payload.url, {
+  pendingDownloads.set(pendingDownloadKey(account.id, payload.url), {
     accountId: account.id,
     filename
   });
